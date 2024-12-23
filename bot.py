@@ -122,58 +122,12 @@ async def handle_city2_input(message: types.Message, state: FSMContext):
                          reply_markup=keyboard)
 
 
-# Функция для форматирования прогноза погоды
-def format_weather(data, location):
-    location_name = geo_storage.get(location)['name']
-    forecast = f"<b>Погода в {location_name}:</b>\n"
-    for part in data if isinstance(data, list) else [data]:
-        forecast += (
-            f"<b>Время:</b> {part.get('time', 'Сейчас')}\n"
-            f"<b>Температура:</b> {part['temperature']}°C\n"
-            f"<b>Ощущается как:</b> {part['real_feels_temperature']}°C\n"
-            f"<b>Ветер:</b> {part['wind_speed']} м/с\n"
-            f"<b>Влажность:</b> {part['humidity']}%\n"
-            f"<b>Облачность:</b> {part['cloud_cover']}%\n"
-            f"<b>Описание:</b> {part['description']}\n"
-            f"{part['analyze_favorability']}\n\n"
-        )
-    return forecast
-
-
-# Обработка выбора временного интервала прогноза и редактирование сообщения
 @dp.callback_query(lambda call: call.data.startswith("weather_"), CityForm.weather)
 async def handle_weather_choice(call: CallbackQuery, state: FSMContext):
     print(CityForm.city2)
 
-    '''# Проверка на ошибки для обеих точек
-    if weather_data_city1['status'] == 'error':
-        await call.message.edit_text(f"Ошибка: {weather_data_city1['message']}")
-        return
-    if weather_data_city2['status'] == 'error':
-        await call.message.edit_text(f"Ошибка: {weather_data_city2['message']}")
-        return
 
-    # Форматирование прогноза для обеих точек
-    forecast_city1 = format_weather(weather_data_city1['data'], city1)
-    forecast_city2 = format_weather(weather_data_city2['data'], city2)
-
-    # Редактирование сообщения с результатом выбора
-    await call.message.edit_text(f"{forecast_city1}\n\n{forecast_city2}", parse_mode="HTML")
-    await state.clear()  # Очищаем состояние после завершения диалога
-    await call.answer()'''
-
-'''
-
-@dp.message(F.text == '/weather')
-async def weather_command(message: types.Message):
-    await message.answer(
-        'Список доступных команд:\n'
-        '/start - Начать работу с ботом\n'
-        '/help - Получить помощь\n'
-        'Также вы можете воспользоваться кнопками ниже.'
-    )
-
-### --- ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ---
+'''### --- ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ---
 @dp.message(F.text == 'О боте')
 async def about_bot(message: types.Message):
     await message.answer('Этот бот создан для демонстрации возможностей библиотеки Aiogram!')
