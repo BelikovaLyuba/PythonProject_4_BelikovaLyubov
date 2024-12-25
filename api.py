@@ -4,12 +4,12 @@ from flask import Flask, render_template, request
 app = Flask(__name__)
 
 api_url = 'https://dataservice.accuweather.com/'
-api_key = 'bCd4AScdlmAAkBxbVo9NJqhhGC3wFdF5'
+api_key = 'STbxeZ4RPycial5PSIkzDOljuRPW0WVP'  # 'bAcODVPKMvw2q6VQREVxk3jC9c5WWSip'
 city_url = 'locations/v1/cities/search'
 
 now_url = '/currentconditions/v1/'
 one_day_url = '/forecasts/v1/daily/1day/'
-five_day_url = '/forecasts/v1/daily/5day/'
+free_day_url = '/forecasts/v1/daily/5day/'
 
 def find_loc_key(url, data):
     loc_key = requests.get(api_url + url,
@@ -19,43 +19,74 @@ def find_loc_key(url, data):
                            }).json()
     return loc_key
 
-def check_bad_weather(temp, wind):
-    if 0 <= temp <= 35 and wind <= 50:
-        return False
-    return True
-
 def weather(loc_key, w_url):
     try:
         r_w = requests.get(api_url + w_url + loc_key, params={'details': 'true',
                                                               'language': 'ru',
                                                               'apikey': api_key,
-                                                              'metric': 'true'}).json()
-        print(r_w)
-
-        temp = r_w[0]['Temperature']['Metric']['Value']
-        humidity = r_w[0]['RelativeHumidity']
-        wind = r_w[0]['Wind']['Speed']['Metric']['Value']
-
-        if check_bad_weather(int(temp), int(wind)):
-            result = 'Погода плохая!'
-        else:
-            result = 'Погода хорошая)'
-
+                                                              'metric': 'true'})
         return {'status': True,
-                'temp': temp,
-                'humidity': humidity,
-                'wind': wind,
-                'result': result}
+                'data': r_w.json()}
     except:
         return {'status': False,
                 'error': r_w.status_code}
 
 
 def check_city(city, time):
-    loc_key = find_loc_key(city_url, city)[0]['Key']
+    loc_key = find_loc_key(city_url, city)
+    if loc_key == []:
+        return {'status': False,
+                'error': 'Нет такого города :('}
+    loc_key = loc_key[0]['Key']
+
     if time == 'weather_now':
-        return weather(loc_key, now_url)
+        w = weather(loc_key, now_url)
+        if w['status']:
+            d = w['data'][0]
+            return {'status': True,
+                    'city': city,
+                    'data': [{'date': d['LocalObservationDateTime'][:10],
+                              'precipitation': d['PrecipitationType'],
+                              'temp': d['Temperature']['Metric']['Value'],
+                              'humidity': d['RelativeHumidity'],
+                              'wind': d['Wind']['Speed']['Metric']['Value']
+                              }]
+                    }
+        return w
+
     elif time == 'weather_1day':
-        return weather(loc_key, one_day_url)
-    elif time == 'weather_5day':
-        return weather(loc_key, five_day_url)
+        w = weather(loc_key, one_day_url)
+        if w['status']:
+            d = w['data']['DailyForecasts']
+            return {'status': True,
+                    'city': city,
+                    'data': [{'date': d['Date'][:10],
+                              'precipitation': (d['Day']['PrecipitationType'] if d['Day']['HasPrecipitation']
+                                                else 'Осадков нет'),
+                              'temp': (d['Temperature']['Minimum']['Value'] + d['Temperature']['Maximum']['Value']) / 2,
+                              'humidity': (d['Day']['RelativeHumidity']['Minimum'] +
+                                           d['Day']['RelativeHumidity']['Maximum']) / 2,
+                              'wind': d['Day']['Wind']['Speed']['Value']
+                              }]
+                    }
+        return w
+
+    elif time == 'weather_3days':
+        w = weather(loc_key, free_day_url)
+        if w['status']:
+            d = w['data']['DailyForecasts']
+            data = list()
+            for i in d:
+                data.append({'date': i['Date'][:10],
+                             'precipitation': (i['Day']['PrecipitationType'] if i['Day']['HasPrecipitation']
+                                               else 'Осадков нет'),
+                             'temp': (i['Temperature']['Minimum']['Value'] +
+                                      i['Temperature']['Maximum']['Value']) / 2,
+                             'humidity': (i['Day']['RelativeHumidity']['Minimum'] +
+                                          i['Day']['RelativeHumidity']['Maximum']) / 2,
+                             'wind': i['Day']['Wind']['Speed']['Value']
+                             })
+            return {'status': True,
+                    'city': city,
+                    'data': data}
+        return w

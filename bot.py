@@ -1,5 +1,5 @@
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import ReplyKeyboardMarkup, ErrorEvent, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import logging
 import asyncio
 from aiogram.fsm.state import State, StatesGroup
@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-from api import check_city
+from api import check_city, weather
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -64,7 +64,7 @@ async def help_command(message: types.Message):
 
 
 @dp.message(F.text == '/weather')
-async def weather_handler(message: types.Message, state: FSMContext):
+async def weather_command(message: types.Message, state: FSMContext):
     await message.answer("Введите город отправления:")
     await state.set_state(CityForm.city1)
 
@@ -77,7 +77,7 @@ async def handle_city1_input(message: types.Message, state: FSMContext):
 
 
 @dp.message(CityForm.city3)
-async def handle_city1_input(message: types.Message, state: FSMContext):
+async def handle_city3_input(message: types.Message, state: FSMContext):
     await state.update_data(city3=message.text)
 
     keyboard_builder = InlineKeyboardBuilder()
@@ -101,7 +101,7 @@ async def intermediate_city_choice(call: CallbackQuery, state: FSMContext):
         keyboard_builder = InlineKeyboardBuilder()
         keyboard_builder.button(text="Текущая погода", callback_data="weather_now")
         keyboard_builder.button(text="Прогноз на 1 день", callback_data="weather_1day")
-        keyboard_builder.button(text="Прогноз на 5 дней", callback_data="weather_5days")
+        keyboard_builder.button(text="Прогноз на 3 дней", callback_data="weather_3days")
         keyboard = keyboard_builder.as_markup()
 
         await call.message.edit_text("Выберите временной интервал прогноза погоды:",
@@ -115,53 +115,61 @@ async def handle_city2_input(message: types.Message, state: FSMContext):
     keyboard_builder = InlineKeyboardBuilder()
     keyboard_builder.button(text="Текущая погода", callback_data="weather_now")
     keyboard_builder.button(text="Прогноз на 1 день", callback_data="weather_1day")
-    keyboard_builder.button(text="Прогноз на 5 дней", callback_data="weather_5days")
+    keyboard_builder.button(text="Прогноз на 3 дней", callback_data="weather_3days")
     keyboard = keyboard_builder.as_markup()
 
     await message.answer("Выберите временной интервал прогноза погоды:",
                          reply_markup=keyboard)
 
+def format_message(text, time):
+    titles = {'weather_now': 'Погода сейчас:',
+              'weather_1day': 'Прогноз погоды на один день:',
+              'weather_3days': 'Прогноз погоды на три дня:'}
+    message = [f'Город: {text['city']}', titles[time]]
+    for i in text['data']:
+        message.append(f'Дата: {i['date']}\n'
+                       f'Температура: {i['temp']}\n'
+                       f'Осадки: {i['precipitation']}\n'
+                       f'Ветер: {i['wind']}\n'
+                       f'Влажность: {i['humidity']}')
+    if len(message) > 5:
+        message = message[:5]
+    return '\n\n'.join(message)
 
-@dp.callback_query(lambda call: call.data.startswith("weather_"), CityForm.weather)
+
+@dp.callback_query(F.data.startswith("weather_"))
 async def handle_weather_choice(call: CallbackQuery, state: FSMContext):
-    print(CityForm.city2)
+    data = await state.get_data()
+
+    text = list()
+    weather1 = check_city(data.get('city1'), call.data)
+    if weather1['status']:
+        text.append(format_message(weather1, call.data))
+        if data.get('city2', None):
+            weather2 = check_city(data.get('city2'), call.data)
+            if weather2['status']:
+                text.append(format_message(weather2, call.data))
+            else:
+                await call.message.edit_text(f'Ошибка: {weather2['error']}')
+        weather3 = check_city(data.get('city3'), call.data)
+        if weather3['status']:
+            text.append(format_message(weather3, call.data))
+        else:
+            await call.message.edit_text(f'Ошибка: {weather3['error']}')
+    else:
+        text.append(f'Ошибка: {weather1['error']}')
+
+    text.append('Спасибо за запрос!')
+    await call.message.edit_text('\n\n**********\n\n'.join(text))
 
 
-'''### --- ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ---
-@dp.message(F.text == 'О боте')
-async def about_bot(message: types.Message):
-    await message.answer('Этот бот создан для демонстрации возможностей библиотеки Aiogram!')
-
-### --- ИНЛАЙН-КНОПКИ ---
-@dp.message(F.text == 'Инлайн-кнопки')
-async def send_inline_keyboard(message: types.Message):
-    # Создаём инлайн-кнопки
-    button_link = InlineKeyboardButton(text='Ссылка', url='https://example.com')
-    button_callback = InlineKeyboardButton(text='Голосовать', callback_data='vote')
-
-    # Создаём инлайн-клавиатуру
-    inline_keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[button_link], [button_callback]]
-    )
-
-    await message.answer('Выберите действие:', reply_markup=inline_keyboard)
-
-### --- CALLBACK-ЗАПРОСЫ ---
-@dp.callback_query(F.data == 'vote') 
-async def vote_callback(callback: types.CallbackQuery):
-    await callback.message.answer('Спасибо за ваш голос!')
-    await callback.answer()
-
-### --- НЕОБРАБОТАННЫЕ СООБЩЕНИЯ ---
-@dp.message()
-async def handle_unrecognized_message(message: types.Message):
-    await message.answer('Извините, я не понял ваш запрос. Попробуйте использовать команды или кнопки.')'''
-
-'''@dp.errors()
+@dp.errors()
 async def handle_error(event: ErrorEvent):
     logging.error(f'Произошла ошибка: {event.exception}')
     if event.update.message:
-        await event.update.message.answer('Извините, произошла ошибка.')'''
+        await event.update.message.answer('Извините, произошла ошибка.')
+
+
 
 ### --- ЗАПУСК БОТА ---
 if __name__ == '__main__':
